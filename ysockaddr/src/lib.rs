@@ -30,6 +30,17 @@ pub enum YSockAddrC {
     V6(libc::sockaddr_in6, libc::socklen_t),
 }
 
+impl YSockAddrC {
+    /// Cast to C/FFI sockaddr + len
+    #[inline]
+    pub fn as_c_sockaddr_len(&self) -> (*const libc::sockaddr, libc::socklen_t) {
+        match *self {
+            Self::V4(sa4_in, len) => (core::ptr::addr_of!(sa4_in) as *const libc::sockaddr, len),
+            Self::V6(sa6_in, len) => (core::ptr::addr_of!(sa6_in) as *const libc::sockaddr, len),
+        }
+    }
+}
+
 impl From<SocketAddr> for YSockAddrC {
     #[inline]
     fn from(sa: SocketAddr) -> YSockAddrC {
@@ -37,9 +48,9 @@ impl From<SocketAddr> for YSockAddrC {
             SocketAddr::V4(sa_v4) => YSockAddrC::V4(
                 libc::sockaddr_in {
                     sin_family: libc::AF_INET as u16,
-                    sin_port: sa_v4.port(),
+                    sin_port: sa_v4.port().to_be(),
                     sin_addr: libc::in_addr {
-                        s_addr: u32::from_be_bytes(sa_v4.ip().octets()),
+                        s_addr: u32::from_ne_bytes(sa_v4.ip().octets()),
                     },
                     sin_zero: [0, 0, 0, 0, 0, 0, 0, 0],
                 },
@@ -48,7 +59,7 @@ impl From<SocketAddr> for YSockAddrC {
             SocketAddr::V6(sa_v6) => YSockAddrC::V6(
                 libc::sockaddr_in6 {
                     sin6_family: libc::AF_INET6 as u16,
-                    sin6_port: sa_v6.port(),
+                    sin6_port: sa_v6.port().to_be(),
                     sin6_flowinfo: sa_v6.flowinfo(),
                     sin6_addr: libc::in6_addr {
                         s6_addr: sa_v6.ip().octets(),

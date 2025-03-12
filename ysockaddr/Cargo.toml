@@ -1,6 +1,6 @@
 [package]
 name = "ysockaddr"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Integration between SockAddr and C sockaddr"
 homepage = "https://github.com/yaws-rs/ylibc"

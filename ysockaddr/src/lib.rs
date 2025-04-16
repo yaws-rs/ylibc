@@ -34,9 +34,9 @@ impl YSockAddrC {
     /// Cast to C/FFI sockaddr + len
     #[inline]
     pub fn as_c_sockaddr_len(&self) -> (*const libc::sockaddr, libc::socklen_t) {
-        match *self {
-            Self::V4(sa4_in, len) => (core::ptr::addr_of!(sa4_in) as *const libc::sockaddr, len),
-            Self::V6(sa6_in, len) => (core::ptr::addr_of!(sa6_in) as *const libc::sockaddr, len),
+        match self {
+            Self::V4(sa4_in, len) => (core::ptr::addr_of!(*sa4_in) as *const libc::sockaddr, *len),
+            Self::V6(sa6_in, len) => (core::ptr::addr_of!(*sa6_in) as *const libc::sockaddr, *len),
         }
     }
 }

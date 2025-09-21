@@ -1,0 +1,27 @@
+[package]
+name = "hugepage"
+version = "0.1.0"
+edition = "2021"
+description = "Linux hugepage"
+homepage = "https://github.com/yaws-rs/ylibc"
+keywords = ["linux", "libc", "mmap"]
+license = "Apache-2.0/MIT"
+readme = "README.md"
+repository = "https://github.com/yaws-rs/ylibc"
+categories = ["science"]
+#exclude = ["assets/"]
+
+[features]
+default = ["std", "extra_traits"]
+alloc = []
+extra_traits = ["libc/extra_traits"]
+std = []
+
+[dependencies]
+libc = { version = "0.2" }
+
+[dev-dependencies]
+rstest = { version = "0.19" }
+
+[package.metadata.docs.rs]
+features = ["std", "extra_traits"]

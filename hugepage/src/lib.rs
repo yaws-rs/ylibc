@@ -10,7 +10,7 @@
 // /sys/kernel/mm/hugepages/hugepages-
 // hugepages-1 048 576kB/  hugepages-2048kB/     hugepages-32768kB/    hugepages-64kB/
 
-#[cfg(not(target_os ="linux"))]
+#[cfg(not(target_os = "linux"))]
 compile_error!("Crate hugepages is Linux specific dependency but is used in non-linux system.");
 
 /// Error
@@ -19,6 +19,16 @@ pub enum HugePageBytesError {
     /// Call to mmap failed with errno
     MmapFailed(std::io::Error),
 }
+
+impl core::fmt::Display for HugePageBytesError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::MmapFailed(e) => write!(f, "mmap Failed: {}", e),
+        }
+    }
+}
+
+impl core::error::Error for HugePageBytesError {}
 
 /// HugePage Bytes constructs large size continuous byteslices through mmap() using Linux HugeTLB feature.
 /// See https://www.kernel.org/doc/Documentation/admin-guide/mm/hugetlbpage.rst
@@ -29,7 +39,7 @@ pub struct HugePageBytes {
 }
 
 /// It is the responsibility of the application to understand which sizes are both configured and supported in the kernel.
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 #[allow(missing_docs)]
 #[allow(non_camel_case_types)]
 pub enum HugePageChoice {
@@ -93,33 +103,53 @@ impl HugePageBytes {
     /// It is the responsibility of the application to know which sizes are supported on
     /// the running system.  See mmap(2) man page for details.
     pub fn new(tlb_choice: HugePageChoice) -> Result<Self, HugePageBytesError> {
-
-        let p = unsafe { libc::mmap(
-            core::ptr::null_mut(),
-            tlb_choice.as_libc_usize(),
-            libc::PROT_READ | libc::PROT_WRITE,
-            libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_HUGETLB | libc::MAP_POPULATE | tlb_choice.as_libc_flag(),
-            -1,
-            0,
-        ) };
+        let p = unsafe {
+            libc::mmap(
+                core::ptr::null_mut(),
+                tlb_choice.as_libc_usize(),
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_PRIVATE
+                    | libc::MAP_ANONYMOUS
+                    | libc::MAP_HUGETLB
+                    | libc::MAP_POPULATE
+                    | tlb_choice.as_libc_flag(),
+                -1,
+                0,
+            )
+        };
 
         if p == libc::MAP_FAILED {
-
             let os_err = std::io::Error::last_os_error();
             return Err(HugePageBytesError::MmapFailed(os_err));
         }
 
-        Ok ( Self { addr: p as *mut u8, tlb_choice } )
+        Ok(Self {
+            addr: p as *mut u8,
+            tlb_choice,
+        })
+    }
+    /// Provide the capacity
+    pub fn capacity(&self) -> usize {
+        self.tlb_choice.as_libc_usize()
+    }
+    /// Mut slice
+    pub fn as_slice_mut(&mut self) -> &mut [u8] {
+        unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.capacity()) }
     }
     /// Provide the raw ptr of the allocated TLB.
-    pub fn as_ptr(&self) -> *mut u8 {
+    pub fn as_mut_ptr(&self) -> *mut u8 {
         self.addr
     }
 }
 
 impl Drop for HugePageBytes {
     fn drop(&mut self) {
-        unsafe { libc::munmap(self.addr as *mut libc::c_void, self.tlb_choice.as_libc_usize()) };
+        unsafe {
+            libc::munmap(
+                self.addr as *mut libc::c_void,
+                self.tlb_choice.as_libc_usize(),
+            )
+        };
     }
 }
 
@@ -128,7 +158,7 @@ mod test {
 
     use super::*;
     use rstest::rstest;
-    
+
     #[rstest]
     //#[case(HugePageChoice::HUGE_64KB)]
     //#[case(HugePageChoice::HUGE_512KB)]

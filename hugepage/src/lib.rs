@@ -18,12 +18,15 @@ compile_error!("Crate hugepages is Linux specific dependency but is used in non-
 pub enum HugePageBytesError {
     /// Call to mmap failed with errno
     MmapFailed(std::io::Error),
+    /// Call to munmap failed with errno with the non-dropped Self given back.
+    MunmapFailed(HugePageBytes, std::io::Error),
 }
 
 impl core::fmt::Display for HugePageBytesError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::MmapFailed(e) => write!(f, "mmap Failed: {}", e),
+            Self::MunmapFailed(tlb, e) => write!(f, "Drop / munmap on {:?} Failed: {}", tlb, e),
         }
     }
 }
@@ -64,6 +67,7 @@ pub enum HugePageChoice {
 impl HugePageChoice {
     // Encode the base-2 logarithm of the desired page size in the six bits at the offset libc::MAP_HUGE_SHIFT.
     // However libc has direct mapping of the well known which we just relay
+    #[inline]
     fn as_libc_flag(&self) -> libc::c_int {
         match self {
             Self::HUGE_64KB => libc::MAP_HUGE_64KB,
@@ -76,24 +80,29 @@ impl HugePageChoice {
             Self::HUGE_256MB => libc::MAP_HUGE_256MB,
             Self::HUGE_512MB => libc::MAP_HUGE_512MB,
             Self::HUGE_1GB => libc::MAP_HUGE_1GB,
+            #[cfg(not(target_pointer_width = "32"))]
             Self::HUGE_2GB => libc::MAP_HUGE_2GB,
+            #[cfg(not(target_pointer_width = "32"))]
             Self::HUGE_16GB => libc::MAP_HUGE_16GB,
         }
     }
+    #[inline]
     fn as_libc_usize(&self) -> usize {
         match self {
-            Self::HUGE_64KB => 64_000,
-            Self::HUGE_512KB => 512_000,
-            Self::HUGE_1MB => 1_000_000,
-            Self::HUGE_2MB => 2_000_000,
-            Self::HUGE_8MB => 8_000_000,
-            Self::HUGE_16MB => 16_000_000,
-            Self::HUGE_32MB => 32_000_000,
-            Self::HUGE_256MB => 256_000_000,
-            Self::HUGE_512MB => 512_000_000,
-            Self::HUGE_1GB => 1_000_000_000,
-            Self::HUGE_2GB => 2_000_000_000,
-            Self::HUGE_16GB => 16_000_000_000,
+            Self::HUGE_64KB => 65_536,
+            Self::HUGE_512KB => 524_288,
+            Self::HUGE_1MB => 1_048_576,
+            Self::HUGE_2MB => 2_097_152,
+            Self::HUGE_8MB => 8_388_608,
+            Self::HUGE_16MB => 16_777_216,
+            Self::HUGE_32MB => 33_554_432,
+            Self::HUGE_256MB => 268_435_456,
+            Self::HUGE_512MB => 536_870_912,
+            Self::HUGE_1GB => 1_073_741_824,
+            #[cfg(not(target_pointer_width = "32"))]
+            Self::HUGE_2GB => 2_147_483_648,
+            #[cfg(not(target_pointer_width = "32"))]
+            Self::HUGE_16GB => 17_179_869_184,
         }
     }
 }
@@ -102,6 +111,7 @@ impl HugePageBytes {
     /// The range of HugeTLB page sixes can be discovered from /sys/kernel/mm/hugepages.
     /// It is the responsibility of the application to know which sizes are supported on
     /// the running system.  See mmap(2) man page for details.
+    #[inline]
     pub fn new(tlb_choice: HugePageChoice) -> Result<Self, HugePageBytesError> {
         let p = unsafe {
             libc::mmap(
@@ -129,27 +139,37 @@ impl HugePageBytes {
         })
     }
     /// Provide the capacity
+    #[inline]
     pub fn capacity(&self) -> usize {
         self.tlb_choice.as_libc_usize()
     }
-    /// Mut slice
+    /// As a mut bytes slice.
+    #[inline]
     pub fn as_slice_mut(&mut self) -> &mut [u8] {
+        // SAFETY: Construct assumes valid construction and initialization with the given capacity.
         unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.capacity()) }
     }
-    /// Provide the raw ptr of the allocated TLB.
+    /// Provide the raw unsafe mutable ptr of the allocated TLB.
+    /// Same warnigns apply as [`slice::as_mut_ptr`](https://doc.rust-lang.org/std/primitive.slice.html#method.as_mut_ptr).    
+    #[inline]
     pub fn as_mut_ptr(&self) -> *mut u8 {
         self.addr
     }
-}
-
-impl Drop for HugePageBytes {
-    fn drop(&mut self) {
-        unsafe {
+    /// Given Drop may fail, the consumer is responsible manually handling the drop of the construct.
+    #[inline]
+    pub fn try_drop(self) -> Result<(), HugePageBytesError> {
+        // SAFETY: Construct assumes valid construction and initialization with the given capacity.
+        let p = unsafe {
             libc::munmap(
                 self.addr as *mut libc::c_void,
                 self.tlb_choice.as_libc_usize(),
             )
         };
+        if p != 0 {
+            let os_err = std::io::Error::last_os_error();
+            return Err(HugePageBytesError::MunmapFailed(self, os_err));
+        }
+        Ok(())
     }
 }
 

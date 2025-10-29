@@ -67,7 +67,7 @@ impl AnonymousMmap {
         })
     }
     /// Provide the raw mutable ptr
-    /// Same warnigns apply as [`slice::as_mut_ptr`](https://doc.rust-lang.org/std/primitive.slice.html#method.as_mut_ptr).    
+    /// Same warnigns apply as [`slice::as_mut_ptr`](https://doc.rust-lang.org/std/primitive.slice.html#method.as_mut_ptr).
     #[inline]
     pub fn as_ptr_mut(&self) -> *mut libc::c_void {
         self.addr.as_ptr()
